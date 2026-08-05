@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>動作確認用のQRコード｜QR照合チェッカー</title>
+<style>
+  :root{ --ink:#161a20; --sub:#6b7482; --line:#dfe3ea; --ok:#0f8b52; --ng:#c8332f; }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:28px 20px 60px; background:#f6f7f9; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  }
+  .wrap{max-width:880px; margin:0 auto;}
+  h1{font-size:20px; margin:0 0 4px;}
+  p.lead{margin:0 0 22px; color:var(--sub); font-size:14px; line-height:1.7;}
+  .field{display:flex; gap:10px; align-items:center; margin-bottom:26px; flex-wrap:wrap;}
+  .field label{font-size:14px; font-weight:600;}
+  .field input{
+    flex:1 1 240px; min-width:200px; padding:11px 13px; font-size:17px;
+    border:1px solid var(--line); border-radius:10px; background:#fff;
+    font-variant-numeric:tabular-nums; color:var(--ink);
+  }
+  .field button{
+    padding:11px 18px; font-size:14px; font-weight:600; border-radius:10px;
+    border:1px solid var(--line); background:#fff; color:var(--ink); cursor:pointer;
+  }
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px;}
+  .card{
+    background:#fff; border:1px solid var(--line); border-radius:14px;
+    padding:18px; text-align:center;
+  }
+  .card h2{font-size:14px; margin:0 0 2px; letter-spacing:.04em;}
+  .card .note{font-size:12px; color:var(--sub); margin:0 0 14px; min-height:17px;}
+  .card .qr{display:flex; justify-content:center;}
+  .card .qr img{width:100%; max-width:200px; height:auto; image-rendering:pixelated;}
+  .card .num{
+    margin-top:12px; font-size:16px; font-weight:700; font-variant-numeric:tabular-nums;
+    word-break:break-all;
+  }
+  .card.pair{border-color:#b9e0cb;} .card.pair h2{color:var(--ok);}
+  .card.odd{border-color:#f0c9c7;} .card.odd h2{color:var(--ng);}
+  .how{
+    margin-top:30px; background:#fff; border:1px solid var(--line); border-radius:14px;
+    padding:18px 20px; font-size:14px; line-height:1.9;
+  }
+  .how h3{font-size:14px; margin:0 0 8px;}
+  .how ol{margin:0; padding-left:1.3em;}
+  @media print{
+    body{background:#fff; padding:0;} .field, .how{display:none;} .card{break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>動作確認用のQRコード</h1>
+  <p class="lead">
+    実物の仕様書・型紙がなくても動作を確認できます。この画面をスマホのQR照合チェッカーで読み取ってください。<br>
+    印刷して紙で試すこともできます（⌘P）。
+  </p>
+
+  <div class="field">
+    <label for="num">仕様書番号</label>
+    <input id="num" value="1234567890" inputmode="text" autocomplete="off">
+    <button id="btnMake">作り直す</button>
+  </div>
+
+  <div class="cards">
+    <div class="card pair">
+      <h2>① 仕様書</h2>
+      <p class="note">まずこれを読み取る</p>
+      <div class="qr" id="qrA"></div>
+      <div class="num" id="nA"></div>
+    </div>
+    <div class="card pair">
+      <h2>② 型紙（同じ番号）</h2>
+      <p class="note">ピンポン♪ が鳴れば正常</p>
+      <div class="qr" id="qrB"></div>
+      <div class="num" id="nB"></div>
+    </div>
+    <div class="card odd">
+      <h2>② 型紙（違う番号）</h2>
+      <p class="note">ブー が鳴れば正常</p>
+      <div class="qr" id="qrC"></div>
+      <div class="num" id="nC"></div>
+    </div>
+  </div>
+
+  <div class="how">
+    <h3>試しかた</h3>
+    <ol>
+      <li>スマホで QR照合チェッカー を開き、「読み取り開始」を押す</li>
+      <li>①のQRをかざす（ピッと鳴って「仕様書」に番号が入る）</li>
+      <li>いったんカメラから外し、②の同じ番号のQRをかざす → <b>ピンポン♪</b></li>
+      <li>続けて、違う番号のQRをかざす → <b>ブー</b></li>
+    </ol>
+  </div>
+</div>
+
+<script src="qrcode.min.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+
+  function draw(el, text) {
+    const q = qrcode(0, 'M');       // 型番自動・誤り訂正レベルM
+    q.addData(text);
+    q.make();
+    el.innerHTML = q.createImgTag(8, 8);
+  }
+
+  function make() {
+    const v = $('num').value.trim() || '1234567890';
+    // 末尾1桁を変えた「わざと違う番号」を作る
+    const last = v.slice(-1);
+    const alt = v.slice(0, -1) + (/\d/.test(last) ? String((Number(last) + 1) % 10) : 'X');
+
+    draw($('qrA'), v);   $('nA').textContent = v;
+    draw($('qrB'), v);   $('nB').textContent = v;
+    draw($('qrC'), alt); $('nC').textContent = alt;
+  }
+
+  $('btnMake').addEventListener('click', make);
+  $('num').addEventListener('keydown', e => { if (e.key === 'Enter') make(); });
+  make();
+})();
+</script>
+</body>
+</html>

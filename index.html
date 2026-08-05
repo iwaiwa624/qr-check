@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>QR照合チェッカー｜仕様書 × 型紙</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root{
+    --bg:#0f1115; --panel:#181b22; --line:#2a2f3a; --fg:#e9edf5; --sub:#9aa4b8;
+    --ok:#18b26a; --ng:#e0413f; --accent:#4a8dff;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; height:100%;}
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    display:flex; flex-direction:column;
+    padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);
+  }
+  header{
+    display:flex; align-items:center; gap:10px; padding:10px 14px;
+    border-bottom:1px solid var(--line); flex:0 0 auto;
+  }
+  header h1{font-size:16px; margin:0; font-weight:700; letter-spacing:.02em;}
+  header .sp{flex:1;}
+  .pill{
+    font-size:12px; padding:4px 10px; border-radius:999px;
+    background:#232734; color:var(--sub); border:1px solid var(--line); white-space:nowrap;
+  }
+
+  /* ---- カメラ ---- */
+  #stage{position:relative; background:#000; flex:0 0 auto; overflow:hidden;}
+  #video{width:100%; display:block; object-fit:cover; background:#000;}
+  #guide{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    pointer-events:none;
+  }
+  #guide .box{
+    width:62%; max-width:280px; aspect-ratio:1/1; border-radius:16px;
+    box-shadow:0 0 0 2000px rgba(0,0,0,.35);
+    border:2px solid rgba(255,255,255,.55);
+    transition:border-color .15s;
+  }
+  #stage.hit #guide .box{border-color:#ffd76a;}
+  #flash{position:absolute; inset:0; opacity:0; pointer-events:none; transition:opacity .12s;}
+  #flash.on{opacity:.55;}
+  #camMsg{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    text-align:center; padding:24px; color:var(--sub); font-size:14px; line-height:1.7;
+  }
+  #camTools{position:absolute; right:10px; bottom:10px; display:flex; gap:8px;}
+  #camTools button{
+    background:rgba(20,22,28,.75); border:1px solid var(--line); color:var(--fg);
+    border-radius:10px; padding:8px 10px; font-size:13px;
+  }
+
+  /* ---- 結果 ---- */
+  #result{
+    flex:0 0 auto; padding:14px; text-align:center; border-bottom:1px solid var(--line);
+    background:var(--panel); transition:background .12s;
+  }
+  #result.ok{background:#0f2a1d; border-bottom-color:#1d5c3c;}
+  #result.ng{background:#2d1516; border-bottom-color:#7a2c2a;}
+  #resultMark{font-size:40px; line-height:1.1; font-weight:800; min-height:46px;}
+  #resultText{font-size:15px; color:var(--sub); margin-top:2px; min-height:22px;}
+  .slots{display:flex; gap:8px; padding:10px 12px 0;}
+  .slot{
+    flex:1; background:#12151c; border:1px solid var(--line); border-radius:12px;
+    padding:8px 10px; text-align:left; min-width:0;
+  }
+  .slot .lb{font-size:11px; color:var(--sub); display:flex; align-items:center; gap:6px;}
+  .slot .vl{
+    font-size:19px; font-weight:700; margin-top:2px; font-variant-numeric:tabular-nums;
+    word-break:break-all; min-height:26px; letter-spacing:.01em;
+  }
+  .slot.wait{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset;}
+  .slot.locked .lb::after{content:"🔒";}
+  .empty{color:#5c657a; font-weight:400; font-size:15px;}
+
+  /* ---- 操作 ---- */
+  #controls{padding:12px; display:flex; flex-wrap:wrap; gap:8px; flex:0 0 auto;}
+  button.btn{
+    flex:1 1 auto; min-height:48px; border-radius:12px; border:1px solid var(--line);
+    background:#222735; color:var(--fg); font-size:15px; font-weight:600;
+  }
+  button.btn.primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  button.btn:active{filter:brightness(1.25);}
+  button.btn:disabled{opacity:.4;}
+  .opts{
+    display:flex; flex-wrap:wrap; gap:14px; padding:0 14px 12px; font-size:13px; color:var(--sub);
+  }
+  .opts label{display:flex; align-items:center; gap:6px;}
+  .opts label.off{opacity:.45;}
+  .opts input[type=checkbox]{width:18px; height:18px; accent-color:var(--accent);}
+  .opts input[type=text]{
+    width:7em; padding:5px 8px; border-radius:8px; border:1px solid var(--line);
+    background:#12151c; color:var(--fg); font-size:13px; font-family:inherit;
+  }
+  button.mini{
+    background:#222735; border:1px solid var(--line); color:var(--fg);
+    border-radius:9px; padding:7px 11px; font-size:13px; font-weight:600;
+  }
+  #audioWarn{
+    margin:0 14px 12px; padding:9px 12px; border-radius:10px;
+    font-size:12.5px; line-height:1.6;
+  }
+  #audioWarn.warn{background:#3a2a12; border:1px solid #6b4d18; color:#ffd08a;}
+  #audioWarn.hint{background:#1b2029; border:1px solid var(--line); color:var(--sub);}
+
+  /* ---- 履歴 ---- */
+  #histWrap{flex:1 1 auto; overflow:auto; border-top:1px solid var(--line); padding:10px 12px 20px;}
+  #histHead{display:flex; align-items:center; gap:10px; font-size:13px; color:var(--sub); margin-bottom:8px;}
+  #histHead .sp{flex:1;}
+  #histHead button{
+    background:none; border:1px solid var(--line); color:var(--sub);
+    border-radius:8px; padding:5px 9px; font-size:12px;
+  }
+  .row{
+    display:flex; align-items:center; gap:10px; padding:8px 4px;
+    border-bottom:1px solid #20242e; font-size:13px;
+  }
+  .row .tag{
+    flex:0 0 auto; width:26px; height:26px; border-radius:8px; display:grid; place-items:center;
+    font-weight:800; color:#fff; font-size:14px;
+  }
+  .row .tag.ok{background:var(--ok);} .row .tag.ng{background:var(--ng);}
+  .row .val{flex:1; min-width:0; font-variant-numeric:tabular-nums; word-break:break-all;}
+  .row .val small{color:var(--sub); display:block; font-size:11px;}
+  .row .tm{flex:0 0 auto; color:#5c657a; font-size:11px;}
+  .counts b{color:var(--fg);} .counts .ngc{color:#ff8b89;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>QR照合チェッカー</h1>
+  <div class="sp"></div>
+  <span class="pill" id="engine">－</span>
+</header>
+
+<div id="stage">
+  <video id="video" playsinline muted autoplay></video>
+  <div id="guide"><div class="box"></div></div>
+  <div id="flash"></div>
+  <div id="camMsg">「読み取り開始」を押すとカメラが起動します。<br>仕様書 → 型紙 の順にQRをかざしてください。</div>
+  <div id="camTools" hidden>
+    <button id="btnTorch" hidden>ライト</button>
+    <button id="btnCam" hidden>カメラ切替</button>
+  </div>
+</div>
+
+<div id="result">
+  <div id="resultMark"></div>
+  <div id="resultText">待機中</div>
+  <div class="slots">
+    <div class="slot" id="slotA">
+      <div class="lb">① 仕様書</div>
+      <div class="vl empty" id="valA">未読取</div>
+    </div>
+    <div class="slot" id="slotB">
+      <div class="lb">② 型紙</div>
+      <div class="vl empty" id="valB">未読取</div>
+    </div>
+  </div>
+</div>
+
+<div id="controls">
+  <button class="btn primary" id="btnStart">読み取り開始</button>
+  <button class="btn" id="btnReset">リセット</button>
+</div>
+
+<div class="opts">
+  <label><input type="checkbox" id="optLock"> 仕様書を固定（1枚 対 複数の型紙）</label>
+  <label><input type="checkbox" id="optDigits"> 数字だけで比較</label>
+  <label><input type="checkbox" id="optSound" checked> 音</label>
+  <label id="labVib"><input type="checkbox" id="optVib" checked> バイブ</label>
+  <label>担当者 <input type="text" id="optWho" placeholder="未設定" maxlength="20" autocomplete="off"></label>
+  <button id="btnTest" class="mini">🔊 音とバイブをテスト</button>
+</div>
+<div id="audioWarn" hidden></div>
+
+<div id="histWrap">
+  <div id="histHead">
+    <span class="counts">判定 <b id="cTotal">0</b>件（OK <b id="cOk">0</b> / NG <b class="ngc" id="cNg">0</b>）</span>
+    <span class="sp"></span>
+    <button id="btnCsv">CSV保存</button>
+    <button id="btnClear">履歴消去</button>
+  </div>
+  <div id="hist"></div>
+</div>
+
+<script src="jsQR.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+const $ = id => document.getElementById(id);
+const video = $('video'), stage = $('stage'), flash = $('flash');
+const valA = $('valA'), valB = $('valB'), slotA = $('slotA'), slotB = $('slotB');
+const resultMark = $('resultMark'), resultText = $('resultText');
+
+/* 同じQRを連続で2回読んでしまわないための「一度フレームから外す」時間(ms) */
+const GAP_MS = 700;
+/* 判定結果を表示しておく時間(ms) */
+const HOLD_MS = 2200;
+
+let stream = null, track = null, detector = null, running = false;
+let state = 'IDLE';              // IDLE / NEED_A / NEED_B / RESULT
+let refRaw = null, refNorm = null;
+let lastSightAt = -1e9;          // 直近でQRが画面内に見えていた時刻
+let holdUntil = 0;
+let devices = [], devIndex = 0;
+let hist = [];
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+/* ============ 設定の保存 ============ */
+const opts = { lock:$('optLock'), digits:$('optDigits'), sound:$('optSound'), vib:$('optVib') };
+try {
+  const s = JSON.parse(localStorage.getItem('qrcheck.opts') || '{}');
+  for (const k in opts) if (k in s) opts[k].checked = !!s[k];
+  hist = JSON.parse(localStorage.getItem('qrcheck.hist') || '[]');
+} catch (e) {}
+/* 担当者名（複数人で使うとき、CSVがどの人の記録か分かるように） */
+const who = $('optWho');
+try { who.value = localStorage.getItem('qrcheck.who') || ''; } catch (e) {}
+who.addEventListener('change', () => {
+  try { localStorage.setItem('qrcheck.who', who.value.trim()); } catch (e) {}
+});
+
+const saveOpts = () => {
+  const s = {}; for (const k in opts) s[k] = opts[k].checked;
+  try { localStorage.setItem('qrcheck.opts', JSON.stringify(s)); } catch (e) {}
+};
+for (const k in opts) opts[k].addEventListener('change', () => {
+  saveOpts();
+  if (k === 'lock' && !opts.lock.checked && state === 'NEED_B') reset();
+  if (k === 'sound') { unlockAudio(); if (opts.sound.checked) soundTick(); }
+  paint();
+});
+
+/* ============ 番号の正規化 ============ */
+function normalize(raw) {
+  let s = String(raw)
+    .replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)) // 全角→半角
+    .replace(/[\s　\-‐‑–—ー_]/g, '')  // 空白・各種ハイフン・アンダーバーを無視
+    .toUpperCase();
+  if (opts.digits.checked) s = s.replace(/\D/g, '');
+  return s;
+}
+
+/* ============ 音 ============ */
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const canVibrate = typeof navigator.vibrate === 'function';
+
+let ac = null, master = null;
+
+function audio() {
+  if (!ac) {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain();
+    master.gain.value = 1;
+    const comp = ac.createDynamicsCompressor();   // 端末スピーカーでも大きく、割れないように
+    comp.threshold.value = -14; comp.ratio.value = 8;
+    master.connect(comp); comp.connect(ac.destination);
+  }
+  if (ac.state !== 'running') ac.resume().then(showAudioWarn, () => {});
+  return ac;
+}
+
+/* iOS では「画面を触った瞬間」でないと音を出せない。触るたびに解除を試みる。 */
+function unlockAudio() {
+  try {
+    // iOS 16.4+：マナーモードスイッチを無視して再生できるようにする
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+  } catch (e) {}
+  const a = audio();
+  try {                                   // 無音を1回鳴らしてロックを外す
+    const s = a.createBufferSource();
+    s.buffer = a.createBuffer(1, 1, 22050);
+    s.connect(a.destination); s.start(0);
+  } catch (e) {}
+  setTimeout(showAudioWarn, 100);
+}
+document.addEventListener('pointerdown', unlockAudio);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && ac) audio(); });
+
+function showAudioWarn() {
+  const el = $('audioWarn');
+  if (!opts.sound.checked) { el.hidden = true; return; }
+  if (ac && ac.state === 'running') {
+    // 音は出せる状態。iPhone はマナーモードで消音されるので一言だけ添える。
+    el.hidden = !isIOS;
+    el.className = 'hint';
+    el.textContent = 'iPhoneは本体側面のマナーモードスイッチをオフにしてください（オンだと音が出ません）';
+  } else {
+    el.hidden = false;
+    el.className = 'warn';
+    el.textContent = '音がまだ有効になっていません。画面を一度タップしてください。';
+  }
+}
+
+function tone(freq, start, dur, gain, type) {
+  const a = audio(), o = a.createOscillator(), g = a.createGain();
+  o.type = type || 'sine'; o.frequency.value = freq;
+  const t = a.currentTime + start;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+function soundOk() {          // ピンポン♪
+  if (!opts.sound.checked) return;
+  tone(987.77, 0,    0.40, 0.85);  tone(1975.5, 0,    0.32, 0.30);
+  tone(1318.5, 0.17, 0.85, 0.85);  tone(2637.0, 0.17, 0.60, 0.30);
+}
+function soundNg() {          // ブー
+  if (!opts.sound.checked) return;
+  tone(146.83, 0, 0.65, 0.80, 'sawtooth');
+  tone(110.00, 0, 0.65, 0.65, 'square');
+  tone(293.66, 0, 0.65, 0.30, 'sawtooth');
+}
+function soundTick() {        // 1件目を読み込んだ合図
+  if (!opts.sound.checked) return;
+  tone(1568, 0, 0.12, 0.55, 'triangle');
+}
+function vibrate(p) {
+  if (opts.vib.checked && canVibrate) { try { navigator.vibrate(p); } catch (e) {} }
+}
+function flashColor(color) {
+  flash.style.background = color; flash.classList.add('on');
+  setTimeout(() => flash.classList.remove('on'), 260);
+}
+
+/* ============ カメラ ============ */
+async function start() {
+  unlockAudio();                             // ユーザー操作のうちに音を有効化
+  $('camMsg').textContent = 'カメラを起動中…';
+  const base = { width:{ideal:1280}, height:{ideal:720} };
+  const want = devices.length ? { deviceId:{exact:devices[devIndex].deviceId}, ...base }
+                              : { facingMode:{ideal:'environment'}, ...base };
+  try {
+    stop(true);
+    stream = await navigator.mediaDevices.getUserMedia({ video: want, audio: false });
+  } catch (e) {
+    $('camMsg').innerHTML = 'カメラを開始できません。<br>' + escapeHtml(e.name + ': ' + e.message) +
+      '<br><br>※ カメラは <b>https://</b> か localhost でのみ使えます。';
+    return;
+  }
+  video.srcObject = stream;
+  track = stream.getVideoTracks()[0];
+  await video.play().catch(() => {});
+  // カメラ起動でiOSの音声セッションが切り替わることがあるため、再度指定しておく
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  showAudioWarn();
+  $('camMsg').hidden = true;
+  $('camTools').hidden = false;
+
+  // トーチ（ライト）対応判定
+  const caps = track.getCapabilities ? track.getCapabilities() : {};
+  $('btnTorch').hidden = !('torch' in caps);
+
+  // 背面カメラが複数ある端末向けの切替ボタン
+  if (!devices.length) {
+    try {
+      const all = await navigator.mediaDevices.enumerateDevices();
+      devices = all.filter(d => d.kind === 'videoinput');
+      const cur = track.getSettings().deviceId;
+      const i = devices.findIndex(d => d.deviceId === cur);
+      if (i >= 0) devIndex = i;
+    } catch (e) {}
+  }
+  $('btnCam').hidden = devices.length < 2;
+
+  fitStage();
+  if (state === 'IDLE') state = 'NEED_A';
+  $('btnStart').textContent = '停止';
+  running = true;
+  paint();
+  loop();
+}
+function stop(silent) {
+  running = false;
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; track = null;
+  if (!silent) {
+    $('btnStart').textContent = '読み取り開始';
+    $('camMsg').hidden = false;
+    $('camMsg').textContent = '停止中です。「読み取り開始」で再開します。';
+    $('camTools').hidden = true;
+    stage.classList.remove('hit');
+  }
+}
+function fitStage() {
+  // 画面の高さに応じてカメラ表示の高さを決める（履歴も見えるように）
+  const h = Math.max(220, Math.min(window.innerHeight * 0.42, 420));
+  stage.style.height = h + 'px';
+  video.style.height = h + 'px';
+}
+window.addEventListener('resize', fitStage);
+window.addEventListener('orientationchange', () => setTimeout(fitStage, 300));
+
+/* ============ 読み取りループ ============ */
+async function initDetector() {
+  if ('BarcodeDetector' in window) {
+    try {
+      const f = await BarcodeDetector.getSupportedFormats();
+      if (f.includes('qr_code')) {
+        detector = new BarcodeDetector({ formats:['qr_code'] });
+        $('engine').textContent = '高速モード';
+        return;
+      }
+    } catch (e) {}
+  }
+  $('engine').textContent = '互換モード';
+}
+async function detect() {
+  if (video.readyState < 2 || !video.videoWidth) return null;
+  if (detector) {
+    try {
+      const r = await detector.detect(video);
+      return r.length ? r[0].rawValue : null;
+    } catch (e) { detector = null; $('engine').textContent = '互換モード'; }
+  }
+  const w = video.videoWidth, h = video.videoHeight;
+  const scale = Math.min(1, 640 / Math.max(w, h));
+  canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const r = jsQR(img.data, img.width, img.height, { inversionAttempts:'dontInvert' });
+  return r ? r.data : null;
+}
+async function loop() {
+  while (running) {
+    let value = null;
+    try { value = await detect(); } catch (e) {}
+    const now = performance.now();
+    const gap = now - lastSightAt;          // 前回QRが見えてからの経過時間
+    if (value) { stage.classList.add('hit'); lastSightAt = now; }
+    else stage.classList.remove('hit');
+
+    if (value && now >= holdUntil) handleScan(value.trim(), gap);
+    await new Promise(r => setTimeout(r, detector ? 90 : 60));
+  }
+}
+
+/* ============ 判定 ============ */
+function handleScan(raw, gap) {
+  if (!raw) return;
+  const n = normalize(raw);
+  if (!n) return;
+
+  if (state === 'RESULT') {
+    if (gap < GAP_MS) return;               // 判定直後、同じQRを見続けている
+    nextCycle();
+  }
+  if (state === 'NEED_A') {
+    refRaw = raw; refNorm = n;
+    state = 'NEED_B';
+    soundTick(); vibrate(30);
+    paint();
+    return;
+  }
+  if (state === 'NEED_B') {
+    // 同じ番号なら「一度QRを外して」から2回目とみなす（1枚を2度読み防止）
+    if (n === refNorm && gap < GAP_MS) return;
+    const ok = (n === refNorm);
+    finish(raw, ok);
+  }
+}
+function finish(rawB, ok) {
+  state = 'RESULT';
+  holdUntil = performance.now() + HOLD_MS;
+  valB.textContent = rawB; valB.classList.remove('empty');
+  resultMark.textContent = ok ? '○ 一致' : '✕ 不一致';
+  resultMark.style.color = ok ? 'var(--ok)' : 'var(--ng)';
+  resultText.textContent = ok ? '仕様書と型紙は同じ番号です' : '番号が違います。確認してください';
+  $('result').classList.add(ok ? 'ok' : 'ng');
+  flashColor(ok ? '#18b26a' : '#e0413f');
+  if (ok) { soundOk(); vibrate(60); } else { soundNg(); vibrate([90,70,90,70,180]); }
+
+  hist.unshift({ t:Date.now(), a:refRaw, b:rawB, ok, w:who.value.trim() });
+  if (hist.length > 500) hist.length = 500;
+  try { localStorage.setItem('qrcheck.hist', JSON.stringify(hist)); } catch (e) {}
+  renderHist();
+
+  setTimeout(() => { if (state === 'RESULT' && performance.now() >= holdUntil) nextCycle(); }, HOLD_MS + 30);
+}
+function nextCycle() {
+  if (opts.lock.checked) {                  // 仕様書を固定して型紙を次々に照合
+    state = 'NEED_B';
+    valB.textContent = '未読取'; valB.classList.add('empty');
+  } else {
+    state = 'NEED_A';
+    refRaw = refNorm = null;
+    valA.textContent = '未読取'; valA.classList.add('empty');
+    valB.textContent = '未読取'; valB.classList.add('empty');
+  }
+  resultMark.textContent = ''; resultMark.style.color = '';
+  $('result').classList.remove('ok','ng');
+  paint();
+}
+function reset() {
+  state = running ? 'NEED_A' : 'IDLE';
+  refRaw = refNorm = null; holdUntil = 0;
+  valA.textContent = '未読取'; valA.classList.add('empty');
+  valB.textContent = '未読取'; valB.classList.add('empty');
+  resultMark.textContent = ''; resultMark.style.color = '';
+  $('result').classList.remove('ok','ng');
+  paint();
+}
+function paint() {
+  if (refRaw !== null) { valA.textContent = refRaw; valA.classList.remove('empty'); }
+  slotA.classList.toggle('wait', state === 'NEED_A');
+  slotB.classList.toggle('wait', state === 'NEED_B');
+  slotA.classList.toggle('locked', opts.lock.checked && refRaw !== null);
+  if (state !== 'RESULT') {
+    resultText.textContent =
+      state === 'NEED_A' ? '① 仕様書のQRをかざしてください' :
+      state === 'NEED_B' ? '② 型紙のQRをかざしてください' : '待機中';
+  }
+}
+
+/* ============ 履歴 ============ */
+function renderHist() {
+  const ok = hist.filter(h => h.ok).length;
+  $('cTotal').textContent = hist.length;
+  $('cOk').textContent = ok;
+  $('cNg').textContent = hist.length - ok;
+  $('hist').innerHTML = hist.slice(0, 100).map(h => {
+    const d = new Date(h.t);
+    const tm = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    const sub = h.ok ? '' : `<small>仕様書 ${escapeHtml(h.a)} ／ 型紙 ${escapeHtml(h.b)}</small>`;
+    return `<div class="row">
+      <div class="tag ${h.ok?'ok':'ng'}">${h.ok?'○':'✕'}</div>
+      <div class="val">${escapeHtml(h.ok ? h.a : '不一致')}${sub}</div>
+      <div class="tm">${tm}</div></div>`;
+  }).join('') || '<div class="row" style="color:#5c657a">まだ判定はありません</div>';
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+$('btnCsv').onclick = () => {
+  if (!hist.length) return;
+  const q = v => '"' + String(v).replace(/"/g,'""') + '"';
+  const csv = '﻿' + ['日時,判定,仕様書,型紙,担当者'].concat(
+    hist.slice().reverse().map(h =>
+      [q(new Date(h.t).toLocaleString('ja-JP')), q(h.ok?'OK':'NG'), q(h.a), q(h.b), q(h.w||'')].join(','))
+  ).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
+  const a = document.createElement('a');
+  const tag = who.value.trim() ? '_' + who.value.trim() : '';
+  a.href = url; a.download = 'qr照合_' + new Date().toISOString().slice(0,10) + tag + '.csv';
+  a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+$('btnClear').onclick = () => {
+  if (!hist.length || !confirm('履歴をすべて消去します。よろしいですか？')) return;
+  hist = []; try { localStorage.removeItem('qrcheck.hist'); } catch (e) {}
+  renderHist();
+};
+
+/* ============ ボタン ============ */
+$('btnStart').onclick = () => { running ? stop() : start(); };
+$('btnReset').onclick = reset;
+$('btnTorch').onclick = async () => {
+  if (!track) return;
+  const on = !track.getSettings().torch;
+  try { await track.applyConstraints({ advanced:[{ torch:on }] }); } catch (e) {}
+};
+$('btnCam').onclick = () => { devIndex = (devIndex + 1) % devices.length; start(); };
+$('btnTest').onclick = () => {
+  unlockAudio();
+  soundTick(); vibrate(30);                       // 読み取り時の合図
+  setTimeout(() => { soundOk(); vibrate(60); }, 700);              // 一致
+  setTimeout(() => { soundNg(); vibrate([90,70,90,70,180]); }, 2100); // 不一致
+};
+document.addEventListener('visibilitychange', () => { if (document.hidden && running) stop(); });
+
+/* 動作確認用（カメラなしで判定ロジックを試すためのフック） */
+window.__qrcheck = {
+  feed: v => { if (state === 'IDLE') { state = 'NEED_A'; paint(); } handleScan(String(v).trim(), 1e9); },
+  get state() { return state; },
+  get ref() { return refRaw; }
+};
+
+/* ============ 起動 ============ */
+if (!canVibrate) {                        // iPhone/iPadのブラウザにはバイブ機能がない
+  opts.vib.checked = false; opts.vib.disabled = true;
+  $('labVib').classList.add('off');
+  $('labVib').lastChild.textContent = ' バイブ（この端末では非対応）';
+}
+fitStage(); renderHist(); paint(); initDetector(); showAudioWarn();
+
+/* オフラインでも起動できるようにする（正規のHTTPSで配信されている場合のみ有効） */
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+if (!window.isSecureContext) {
+  $('camMsg').innerHTML = '⚠ このページは <b>https://</b> ではないため、カメラを使えません。<br>' +
+    'https で公開されたURL、または localhost から開いてください。';
+}
+})();
+</script>
+</body>
+</html>
