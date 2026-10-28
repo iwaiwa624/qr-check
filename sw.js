@@ -5,7 +5,7 @@
  * アプリを更新したときは、下の VERSION の数字を1つ増やしてください。
  * 各端末は次回起動時に新しい版を取り込みます。
  */
-const VERSION = 'qrcheck-v1';
+const VERSION = 'qrcheck-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -16,6 +16,7 @@ const ASSETS = [
   './apple-touch-icon.png',
   './test-qr.html',
   './qrcode.min.js',
+  './merge.html',
 ];
 
 self.addEventListener('install', e => {

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSVまとめ｜QR照合チェッカー</title>
+<style>
+  :root{ --ink:#161a20; --sub:#6b7482; --line:#dfe3ea; --ok:#0f8b52; --ng:#c8332f; --accent:#2f6fe0; }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:28px 16px 60px; background:#f6f7f9; color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  }
+  .wrap{max-width:960px; margin:0 auto;}
+  h1{font-size:20px; margin:0 0 4px;}
+  p.lead{margin:0 0 20px; color:var(--sub); font-size:14px; line-height:1.7;}
+  #drop{
+    border:2px dashed #b9c1ce; border-radius:14px; background:#fff; padding:28px 16px;
+    text-align:center; cursor:pointer; font-size:15px; line-height:1.8;
+  }
+  #drop.over{border-color:var(--accent); background:#eef4ff;}
+  #drop small{color:var(--sub); font-size:12px;}
+  #files{margin:14px 0 0; padding:0; list-style:none; font-size:13px;}
+  #files li{padding:6px 0; border-bottom:1px solid var(--line); display:flex; gap:10px;}
+  #files li span:first-child{flex:1; word-break:break-all;}
+  #files li.err{color:var(--ng);}
+  .bar{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:18px 0;}
+  button{
+    padding:11px 18px; font-size:14px; font-weight:600; border-radius:10px;
+    border:1px solid var(--line); background:#fff; color:var(--ink); cursor:pointer;
+  }
+  button.primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  button:disabled{opacity:.4; cursor:default;}
+  .stats{font-size:14px; color:var(--sub);}
+  .stats b{color:var(--ink);}
+  h2{font-size:15px; margin:26px 0 8px;}
+  .tblWrap{overflow-x:auto; background:#fff; border:1px solid var(--line); border-radius:12px;}
+  table{border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums;}
+  th,td{padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap;}
+  th{background:#f0f2f6; font-weight:600;}
+  td.ok{color:var(--ok); font-weight:700;} td.ng{color:var(--ng); font-weight:700;}
+  .more{font-size:12px; color:var(--sub); padding:8px 10px;}
+  a.back{color:var(--accent); font-size:14px; text-decoration:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="./">← アプリに戻る</a>
+  <h1 style="margin-top:12px">CSVをまとめる</h1>
+  <p class="lead">
+    各スマホで「CSV保存」したファイルを全部選ぶと、1つのCSVにまとめます。<br>
+    同じ記録が重複していても1件にまとめ、日付・時間の順に並べ替えます。ファイルはこの端末の中だけで処理され、どこにも送信されません。
+  </p>
+
+  <div id="drop">
+    ここをタップしてCSVを選ぶ（複数選択できます）<br>
+    <small>パソコンならファイルをここにドラッグ＆ドロップでもOK</small>
+  </div>
+  <input type="file" id="pick" accept=".csv,text/csv" multiple hidden>
+  <ul id="files"></ul>
+
+  <div class="bar">
+    <button class="primary" id="btnSave" disabled>まとめたCSVを保存</button>
+    <button id="btnClear" disabled>選び直す</button>
+    <span class="stats" id="stats"></span>
+  </div>
+
+  <div id="summary"></div>
+  <div id="preview"></div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const COLS = ['QRコード番号','日付','時間','担当者','端末番号','判定','仕様書','型紙'];
+let rows = [];           // まとめた記録
+let fileInfo = [];       // 読み込んだファイルの一覧
+
+/* ---- CSVの読み込み ---- */
+function decode(buf) {
+  // 通常はUTF-8。Excelで開いて上書き保存したファイルはShift_JISになることがあるので両対応
+  try { return new TextDecoder('utf-8', { fatal:true }).decode(buf); }
+  catch (e) { return new TextDecoder('shift_jis').decode(buf); }
+}
+function parseCsv(text) {
+  text = text.replace(/^﻿/, '');
+  const out = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i+1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i+1] === '\n') i++;
+      row.push(cell); out.push(row); row = []; cell = '';
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); out.push(row); }
+  return out.filter(r => r.some(v => v.trim() !== ''));
+}
+const p2 = n => String(n).padStart(2,'0');
+/* 「2026/10/27 17:40:12」「2026-10-27」などを 日付 / 時間 に分ける */
+function splitDateTime(s) {
+  const m = String(s).match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})\D*(?:(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!m) return [s, ''];
+  return [m[1] + '/' + p2(m[2]) + '/' + p2(m[3]), m[4] ? p2(m[4]) + ':' + m[5] + ':' + (m[6] || '00') : ''];
+}
+const normDate = s => splitDateTime(s)[0];
+const normTime = s => { const m = String(s).match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/); return m ? p2(m[1]) + ':' + m[2] + ':' + (m[3] || '00') : s; };
+
+function toRecords(table) {
+  const head = table[0].map(h => h.trim());
+  const idx = name => head.indexOf(name);
+  const body = table.slice(1);
+  if (idx('QRコード番号') >= 0) {               // 新しい形式
+    return body.map(r => {
+      const o = {}; COLS.forEach(c => o[c] = (r[idx(c)] ?? '').trim());
+      o['日付'] = normDate(o['日付']); o['時間'] = normTime(o['時間']);
+      return o;
+    });
+  }
+  if (idx('日時') >= 0 && idx('仕様書') >= 0) {  // 以前の版（日時,判定,仕様書,型紙,担当者）
+    return body.map(r => {
+      const [d, t] = splitDateTime(r[idx('日時')] || '');
+      const a = (r[idx('仕様書')] || '').trim();
+      return { 'QRコード番号':a, '日付':d, '時間':t, '担当者':(r[idx('担当者')] || '').trim(),
+               '端末番号':'', '判定':(r[idx('判定')] || '').trim(), '仕様書':a, '型紙':(r[idx('型紙')] || '').trim() };
+    });
+  }
+  return null;
+}
+
+async function addFiles(list) {
+  for (const f of list) {
+    try {
+      const recs = toRecords(parseCsv(decode(await f.arrayBuffer())));
+      if (!recs) { fileInfo.push({ name:f.name, err:'QR照合チェッカーのCSVではありません' }); continue; }
+      rows.push(...recs);
+      fileInfo.push({ name:f.name, n:recs.length });
+    } catch (e) {
+      fileInfo.push({ name:f.name, err:'読み込めませんでした' });
+    }
+  }
+  // 重複を除く（同じ端末・同じ秒・同じ番号の記録＝同じ記録とみなす）
+  const seen = new Set();
+  rows = rows.filter(o => {
+    const k = COLS.map(c => o[c]).join('\u0001');
+    if (seen.has(k)) return false; seen.add(k); return true;
+  });
+  rows.sort((x, y) => (x['日付'] + x['時間']).localeCompare(y['日付'] + y['時間']) ||
+                      x['端末番号'].localeCompare(y['端末番号']));
+  render();
+}
+
+/* ---- 表示 ---- */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function render() {
+  $('files').innerHTML = fileInfo.map(f => f.err
+    ? `<li class="err"><span>${esc(f.name)}</span><span>${f.err}</span></li>`
+    : `<li><span>${esc(f.name)}</span><span>${f.n}件</span></li>`).join('');
+  const total = fileInfo.reduce((s, f) => s + (f.n || 0), 0);
+  const ok = rows.filter(r => r['判定'] === 'OK').length;
+  $('stats').innerHTML = rows.length
+    ? `<b>${rows.length}</b>件（OK <b>${ok}</b> / NG <b>${rows.length - ok}</b>）` +
+      (total > rows.length ? `　重複 ${total - rows.length}件を除外` : '')
+    : '';
+  $('btnSave').disabled = !rows.length;
+  $('btnClear').disabled = !fileInfo.length;
+
+  // 担当者・端末ごとの件数
+  const g = new Map();
+  rows.forEach(r => {
+    const k = (r['担当者'] || '（未設定）') + '\u0001' + (r['端末番号'] || '—');
+    const v = g.get(k) || { n:0, ng:0, from:r['日付'], to:r['日付'] };
+    v.n++; if (r['判定'] !== 'OK') v.ng++;
+    if (r['日付'] < v.from) v.from = r['日付']; if (r['日付'] > v.to) v.to = r['日付'];
+    g.set(k, v);
+  });
+  $('summary').innerHTML = g.size ? `<h2>担当者・端末ごと</h2><div class="tblWrap"><table>
+    <tr><th>担当者</th><th>端末番号</th><th>件数</th><th>NG</th><th>期間</th></tr>
+    ${[...g].map(([k, v]) => { const [w, d] = k.split('\u0001');
+      return `<tr><td>${esc(w)}</td><td>${esc(d)}</td><td>${v.n}</td><td class="${v.ng?'ng':''}">${v.ng}</td>
+              <td>${v.from}${v.to !== v.from ? ' 〜 ' + v.to : ''}</td></tr>`; }).join('')}
+    </table></div>` : '';
+
+  const LIM = 200;
+  $('preview').innerHTML = rows.length ? `<h2>まとめた内容</h2><div class="tblWrap"><table>
+    <tr>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>
+    ${rows.slice(0, LIM).map(r => `<tr>${COLS.map(c =>
+      `<td class="${c === '判定' ? (r[c] === 'OK' ? 'ok' : 'ng') : ''}">${esc(r[c])}</td>`).join('')}</tr>`).join('')}
+    </table>${rows.length > LIM ? `<div class="more">先頭${LIM}件を表示中（保存するCSVには全${rows.length}件が入ります）</div>` : ''}</div>` : '';
+}
+
+/* ---- 保存 ---- */
+$('btnSave').onclick = () => {
+  const q = v => '"' + String(v).replace(/"/g, '""') + '"';
+  const csv = '﻿' + [COLS.join(',')].concat(rows.map(r => COLS.map(c => q(r[c])).join(','))).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
+  const a = document.createElement('a'), d = new Date();
+  a.href = url; a.download = 'qr照合_まとめ_' + d.getFullYear() + p2(d.getMonth()+1) + p2(d.getDate()) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+$('btnClear').onclick = () => { rows = []; fileInfo = []; $('pick').value = ''; render(); };
+
+/* ---- ファイル選択 ---- */
+const drop = $('drop'), pick = $('pick');
+drop.onclick = () => pick.click();
+pick.onchange = () => { addFiles([...pick.files]); pick.value = ''; };
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); addFiles([...e.dataTransfer.files]); });
+})();
+</script>
+</body>
+</html>

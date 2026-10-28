@@ -116,7 +116,10 @@
   /* ---- 履歴 ---- */
   #histWrap{flex:1 1 auto; overflow:auto; border-top:1px solid var(--line); padding:10px 12px 20px;}
   #histHead{display:flex; align-items:center; gap:10px; font-size:13px; color:var(--sub); margin-bottom:8px;}
+  #histHead{flex-wrap:wrap; row-gap:6px;}
+  #histHead button{white-space:nowrap;}
   #histHead .sp{flex:1;}
+  #histHead a{color:var(--accent); font-size:13px; text-decoration:none; white-space:nowrap;}
   #histHead button{
     background:none; border:1px solid var(--line); color:var(--sub);
     border-radius:8px; padding:5px 9px; font-size:12px;
@@ -181,6 +184,7 @@
   <label><input type="checkbox" id="optSound" checked> 音</label>
   <label id="labVib"><input type="checkbox" id="optVib" checked> バイブ</label>
   <label>担当者 <input type="text" id="optWho" placeholder="未設定" maxlength="20" autocomplete="off"></label>
+  <label>端末番号 <input type="text" id="optDev" maxlength="20" autocomplete="off"></label>
   <button id="btnTest" class="mini">🔊 音とバイブをテスト</button>
 </div>
 <div id="audioWarn" hidden></div>
@@ -190,6 +194,7 @@
     <span class="counts">判定 <b id="cTotal">0</b>件（OK <b id="cOk">0</b> / NG <b class="ngc" id="cNg">0</b>）</span>
     <span class="sp"></span>
     <button id="btnCsv">CSV保存</button>
+    <a id="lnkMerge" href="merge.html">CSVをまとめる</a>
     <button id="btnClear">履歴消去</button>
   </div>
   <div id="hist"></div>
@@ -232,6 +237,22 @@ const who = $('optWho');
 try { who.value = localStorage.getItem('qrcheck.who') || ''; } catch (e) {}
 who.addEventListener('change', () => {
   try { localStorage.setItem('qrcheck.who', who.value.trim()); } catch (e) {}
+});
+/* 端末番号（スマホごとの識別番号）。初回に自動で採番し、手で書き換えも可。
+   ブラウザからは本体のシリアル番号等は取得できないため、アプリ側で発行して端末内に保存する。 */
+const dev = $('optDev');
+function newDevId() {
+  const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', r = new Uint8Array(4);
+  (self.crypto || {}).getRandomValues ? crypto.getRandomValues(r) : r.forEach((_, i) => r[i] = Math.random() * 256);
+  return 'T-' + Array.from(r, x => c[x % c.length]).join('');
+}
+let devId = '';
+try { devId = localStorage.getItem('qrcheck.dev') || ''; } catch (e) {}
+if (!devId) { devId = newDevId(); try { localStorage.setItem('qrcheck.dev', devId); } catch (e) {} }
+dev.value = devId;
+dev.addEventListener('change', () => {
+  devId = dev.value.trim() || newDevId(); dev.value = devId;
+  try { localStorage.setItem('qrcheck.dev', devId); } catch (e) {}
 });
 
 const saveOpts = () => {
@@ -487,7 +508,7 @@ function finish(rawB, ok) {
   flashColor(ok ? '#18b26a' : '#e0413f');
   if (ok) { soundOk(); vibrate(60); } else { soundNg(); vibrate([90,70,90,70,180]); }
 
-  hist.unshift({ t:Date.now(), a:refRaw, b:rawB, ok, w:who.value.trim() });
+  hist.unshift({ t:Date.now(), a:refRaw, b:rawB, ok, w:who.value.trim(), d:devId });
   if (hist.length > 500) hist.length = 500;
   try { localStorage.setItem('qrcheck.hist', JSON.stringify(hist)); } catch (e) {}
   renderHist();
@@ -548,18 +569,26 @@ function renderHist() {
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
+/* CSV。複数端末のCSVは merge.html で1つにまとめられる（列はそのまま共通） */
+const p2 = n => String(n).padStart(2,'0');
+const ymd = d => d.getFullYear() + '/' + p2(d.getMonth()+1) + '/' + p2(d.getDate());
+const hms = d => p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
 $('btnCsv').onclick = () => {
   if (!hist.length) return;
   const q = v => '"' + String(v).replace(/"/g,'""') + '"';
-  const csv = '﻿' + ['日時,判定,仕様書,型紙,担当者'].concat(
-    hist.slice().reverse().map(h =>
-      [q(new Date(h.t).toLocaleString('ja-JP')), q(h.ok?'OK':'NG'), q(h.a), q(h.b), q(h.w||'')].join(','))
+  const csv = '\ufeff' + ['QRコード番号,日付,時間,担当者,端末番号,判定,仕様書,型紙'].concat(
+    hist.slice().reverse().map(h => {
+      const d = new Date(h.t);
+      return [h.a, ymd(d), hms(d), h.w||'', h.d||devId, h.ok?'OK':'NG', h.a, h.b].map(q).join(',');
+    })
   ).join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
   const a = document.createElement('a');
-  const tag = who.value.trim() ? '_' + who.value.trim() : '';
-  a.href = url; a.download = 'qr照合_' + new Date().toISOString().slice(0,10) + tag + '.csv';
-  a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const now = new Date();
+  const tag = (who.value.trim() ? '_' + who.value.trim() : '') + '_' + devId;
+  a.href = url;
+  a.download = 'qr照合_' + now.getFullYear() + p2(now.getMonth()+1) + p2(now.getDate()) + tag + '.csv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 $('btnClear').onclick = () => {
   if (!hist.length || !confirm('履歴をすべて消去します。よろしいですか？')) return;
