@@ -73,7 +73,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
-const COLS = ['QRコード番号','日付','時間','担当者','端末番号','判定','仕様書','型紙'];
+const COLS = ['QRコード番号','日付','時間','担当者','端末番号','照合種別','判定','仕様書','照合相手の番号','読取方法'];
 let rows = [];           // まとめた記録
 let fileInfo = [];       // 読み込んだファイルの一覧
 
@@ -115,9 +115,12 @@ function toRecords(table) {
   const head = table[0].map(h => h.trim());
   const idx = name => head.indexOf(name);
   const body = table.slice(1);
-  if (idx('QRコード番号') >= 0) {               // 新しい形式
+  if (idx('QRコード番号') >= 0) {               // v2以降の形式
     return body.map(r => {
-      const o = {}; COLS.forEach(c => o[c] = (r[idx(c)] ?? '').trim());
+      const o = {}; COLS.forEach(c => o[c] = idx(c) >= 0 ? (r[idx(c)] ?? '').trim() : '');
+      if (idx('型紙') >= 0 && !o['照合相手の番号']) o['照合相手の番号'] = (r[idx('型紙')] || '').trim();
+      o['照合種別'] = o['照合種別'] || '仕様書×型紙';
+      o['読取方法'] = o['読取方法'] || 'QR';
       o['日付'] = normDate(o['日付']); o['時間'] = normTime(o['時間']);
       return o;
     });
@@ -127,7 +130,8 @@ function toRecords(table) {
       const [d, t] = splitDateTime(r[idx('日時')] || '');
       const a = (r[idx('仕様書')] || '').trim();
       return { 'QRコード番号':a, '日付':d, '時間':t, '担当者':(r[idx('担当者')] || '').trim(),
-               '端末番号':'', '判定':(r[idx('判定')] || '').trim(), '仕様書':a, '型紙':(r[idx('型紙')] || '').trim() };
+               '端末番号':'', '照合種別':'仕様書×型紙', '判定':(r[idx('判定')] || '').trim(), '仕様書':a,
+               '照合相手の番号':(r[idx('型紙')] || '').trim(), '読取方法':'QR' };
     });
   }
   return null;

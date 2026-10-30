@@ -16,6 +16,7 @@
     --ok:#18b26a; --ng:#e0413f; --accent:#4a8dff;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  [hidden]{display:none !important;}
   html,body{margin:0; height:100%;}
   body{
     background:var(--bg); color:var(--fg);
@@ -60,6 +61,38 @@
     border-radius:10px; padding:8px 10px; font-size:13px;
   }
 
+  /* ---- モード切替 ---- */
+  #modeTabs{display:flex; gap:6px; padding:8px 12px; flex:0 0 auto; border-bottom:1px solid var(--line);}
+  #modeTabs button{
+    flex:1; min-height:38px; border-radius:10px; border:1px solid var(--line);
+    background:#12151c; color:var(--sub); font-size:14px; font-weight:600;
+  }
+  #modeTabs button.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+  body:not(.orderMode) .orderOnly{display:none !important;}
+  /* 受注書を読むときは横長の枠 */
+  #stage.ocr #guide .box{width:88%; max-width:520px; aspect-ratio:4/1; border-radius:10px;}
+  #ocrTip{
+    position:absolute; left:0; right:0; bottom:12px; text-align:center; font-size:12px;
+    color:#fff; text-shadow:0 1px 3px #000; padding:0 60px; pointer-events:none;
+  }
+
+  /* ---- 手入力 ---- */
+  #modal{position:fixed; inset:0; background:rgba(0,0,0,.6); display:flex; align-items:flex-start;
+         justify-content:center; padding:70px 16px; z-index:20;}
+  #modal[hidden]{display:none;}
+  #modal .sheet{width:100%; max-width:420px; background:var(--panel); border:1px solid var(--line);
+                border-radius:16px; padding:18px;}
+  #mTitle{font-size:15px; font-weight:700; margin-bottom:10px;}
+  #mInput{width:100%; font-size:26px; padding:10px 12px; border-radius:10px; border:1px solid var(--line);
+          background:#0f1115; color:var(--fg); font-variant-numeric:tabular-nums; letter-spacing:.04em;}
+  .mNote{font-size:12px; color:var(--sub); margin:6px 0 14px;}
+  .mBtns{display:flex; gap:8px; flex-wrap:wrap;}
+  .mBtns button{flex:1 1 auto; min-height:44px; border-radius:10px; border:1px solid var(--line);
+                background:#222735; color:var(--fg); font-size:14px; font-weight:600;}
+  .mBtns button.primary{background:var(--accent); border-color:var(--accent); color:#fff;}
+  #slotHint{font-size:11px; color:#5c657a; margin-top:6px;}
+  .slot{cursor:pointer;}
+
   /* ---- 結果 ---- */
   #result{
     flex:0 0 auto; padding:14px; text-align:center; border-bottom:1px solid var(--line);
@@ -79,6 +112,9 @@
     font-size:19px; font-weight:700; margin-top:2px; font-variant-numeric:tabular-nums;
     word-break:break-all; min-height:26px; letter-spacing:.01em;
   }
+  .orderMode .slots{gap:6px;}
+  .orderMode .slot{padding:8px 8px;}
+  .orderMode .slot .vl{font-size:16px; letter-spacing:0;}
   .slot.wait{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset;}
   .slot.locked .lb::after{content:"🔒";}
   .empty{color:#5c657a; font-weight:400; font-size:15px;}
@@ -135,7 +171,12 @@
   .row .tag.ok{background:var(--ok);} .row .tag.ng{background:var(--ng);}
   .row .val{flex:1; min-width:0; font-variant-numeric:tabular-nums; word-break:break-all;}
   .row .val small{color:var(--sub); display:block; font-size:11px;}
+  .row .kind{font-size:10px; color:var(--sub); border:1px solid var(--line); border-radius:6px; padding:1px 5px; margin-right:6px;}
   .row .tm{flex:0 0 auto; color:#5c657a; font-size:11px;}
+  #histHead button#syncStat{border-color:#2e5a45; color:#7fdcae;}
+  #histHead button#syncStat.wait{border-color:#6b4d18; color:#ffd08a;}
+  #histHead button#syncStat.err{border-color:#6b2a2a; color:#ff8b89;}
+  .row .tm small{display:block; color:#d9a54a; font-size:10px; text-align:right;}
   .counts b{color:var(--fg);} .counts .ngc{color:#ff8b89;}
 </style>
 </head>
@@ -147,11 +188,17 @@
   <span class="pill" id="engine">－</span>
 </header>
 
+<div id="modeTabs">
+  <button data-m="pair">仕様書 × 型紙</button>
+  <button data-m="order">受注書あり</button>
+</div>
+
 <div id="stage">
   <video id="video" playsinline muted autoplay></video>
   <div id="guide"><div class="box"></div></div>
+  <div id="ocrTip" hidden>受注書の番号（例 26-0001）を枠の中に。少し離すとピントが合います</div>
   <div id="flash"></div>
-  <div id="camMsg">「読み取り開始」を押すとカメラが起動します。<br>仕様書 → 型紙 の順にQRをかざしてください。</div>
+  <div id="camMsg">「読み取り開始」を押すとカメラが起動します。</div>
   <div id="camTools" hidden>
     <button id="btnTorch" hidden>ライト</button>
     <button id="btnCam" hidden>カメラ切替</button>
@@ -162,15 +209,20 @@
   <div id="resultMark"></div>
   <div id="resultText">待機中</div>
   <div class="slots">
+    <div class="slot" id="slotO" hidden>
+      <div class="lb">① 受注書</div>
+      <div class="vl empty" id="valO">未読取</div>
+    </div>
     <div class="slot" id="slotA">
-      <div class="lb">① 仕様書</div>
+      <div class="lb" id="lbA">① 仕様書</div>
       <div class="vl empty" id="valA">未読取</div>
     </div>
     <div class="slot" id="slotB">
-      <div class="lb">② 型紙</div>
+      <div class="lb" id="lbB">② 型紙</div>
       <div class="vl empty" id="valB">未読取</div>
     </div>
   </div>
+  <div id="slotHint">枠をタップすると番号を手入力できます</div>
 </div>
 
 <div id="controls">
@@ -181,6 +233,8 @@
 <div class="opts">
   <label><input type="checkbox" id="optLock"> 仕様書を固定（1枚 対 複数の型紙）</label>
   <label><input type="checkbox" id="optDigits"> 数字だけで比較</label>
+  <label class="orderOnly"><input type="checkbox" id="optKata" checked> 受注書のあと型紙も照合</label>
+  <label class="orderOnly"><input type="checkbox" id="optFmt" checked> 受注書は「26-0001」形式</label>
   <label><input type="checkbox" id="optSound" checked> 音</label>
   <label id="labVib"><input type="checkbox" id="optVib" checked> バイブ</label>
   <label>担当者 <input type="text" id="optWho" placeholder="未設定" maxlength="20" autocomplete="off"></label>
@@ -189,10 +243,24 @@
 </div>
 <div id="audioWarn" hidden></div>
 
+<div id="modal" hidden>
+  <form id="mForm" class="sheet">
+    <div id="mTitle"></div>
+    <input id="mInput" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done" placeholder="例 26-0001">
+    <div class="mNote">ハイフンは入れても入れなくても同じに扱います</div>
+    <div class="mBtns">
+      <button type="button" id="mCancel">キャンセル</button>
+      <button type="button" id="mRescan" hidden>カメラで読み直す</button>
+      <button type="submit" class="primary">決定</button>
+    </div>
+  </form>
+</div>
+
 <div id="histWrap">
   <div id="histHead">
     <span class="counts">判定 <b id="cTotal">0</b>件（OK <b id="cOk">0</b> / NG <b class="ngc" id="cNg">0</b>）</span>
     <span class="sp"></span>
+    <button id="syncStat" hidden></button>
     <button id="btnCsv">CSV保存</button>
     <a id="lnkMerge" href="merge.html">CSVをまとめる</a>
     <button id="btnClear">履歴消去</button>
@@ -200,6 +268,8 @@
   <div id="hist"></div>
 </div>
 
+<script src="config.js"></script>
+<script src="ocr.js"></script>
 <script src="jsQR.min.js"></script>
 <script>
 (() => {
@@ -207,7 +277,7 @@
 
 const $ = id => document.getElementById(id);
 const video = $('video'), stage = $('stage'), flash = $('flash');
-const valA = $('valA'), valB = $('valB'), slotA = $('slotA'), slotB = $('slotB');
+const valA = $('valA'), valB = $('valB'), valO = $('valO'), slotA = $('slotA'), slotB = $('slotB');
 const resultMark = $('resultMark'), resultText = $('resultText');
 
 /* 同じQRを連続で2回読んでしまわないための「一度フレームから外す」時間(ms) */
@@ -226,7 +296,7 @@ const canvas = document.createElement('canvas');
 const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
 /* ============ 設定の保存 ============ */
-const opts = { lock:$('optLock'), digits:$('optDigits'), sound:$('optSound'), vib:$('optVib') };
+const opts = { lock:$('optLock'), digits:$('optDigits'), sound:$('optSound'), vib:$('optVib'), kata:$('optKata'), fmt:$('optFmt') };
 try {
   const s = JSON.parse(localStorage.getItem('qrcheck.opts') || '{}');
   for (const k in opts) if (k in s) opts[k].checked = !!s[k];
@@ -261,7 +331,8 @@ const saveOpts = () => {
 };
 for (const k in opts) opts[k].addEventListener('change', () => {
   saveOpts();
-  if (k === 'lock' && !opts.lock.checked && state === 'NEED_B') reset();
+  if (k === 'lock' && !opts.lock.checked && state === 'NEED_B' && mode !== 'order') reset();
+  if (k === 'kata' && state === 'NEED_B' && mode === 'order' && !opts.kata.checked) { state = 'NEED_A'; clearA(); clearB(); }
   if (k === 'sound') { unlockAudio(); if (opts.sound.checked) soundTick(); }
   paint();
 });
@@ -402,7 +473,7 @@ async function start() {
   $('btnCam').hidden = devices.length < 2;
 
   fitStage();
-  if (state === 'IDLE') state = 'NEED_A';
+  if (state === 'IDLE') state = firstState();
   $('btnStart').textContent = '停止';
   running = true;
   paint();
@@ -461,9 +532,15 @@ async function detect() {
 }
 async function loop() {
   while (running) {
+    const now = performance.now();
+    // 受注書は QR がないので、枠の中の数字を読む
+    if (state === 'NEED_O') {
+      try { ocrStep(); } catch (e) {}
+      await new Promise(r => setTimeout(r, 110));
+      continue;
+    }
     let value = null;
     try { value = await detect(); } catch (e) {}
-    const now = performance.now();
     const gap = now - lastSightAt;          // 前回QRが見えてからの経過時間
     if (value) { stage.classList.add('hit'); lastSightAt = now; }
     else stage.classList.remove('hit');
@@ -473,7 +550,46 @@ async function loop() {
   }
 }
 
+/* ============ 受注書の数字読み取り ============ */
+const ocrCanvas = document.createElement('canvas');
+const ocrCtx = ocrCanvas.getContext('2d', { willReadFrequently: true });
+let ocrWin = [];                 // 直近の読み取り結果（数フレーム分）
+const OCR_NEED = 3;              // 同じ番号を何回読めたら確定するか
+function grabBox() {
+  if (video.readyState < 2 || !video.videoWidth) return null;
+  const vr = video.getBoundingClientRect(), br = document.querySelector('#guide .box').getBoundingClientRect();
+  const vw = video.videoWidth, vh = video.videoHeight;
+  const sc = Math.max(vr.width / vw, vr.height / vh);          // object-fit: cover の倍率
+  const offX = (vr.width - vw * sc) / 2, offY = (vr.height - vh * sc) / 2;
+  let sx = (br.left - vr.left - offX) / sc, sy = (br.top - vr.top - offY) / sc;
+  let sw = br.width / sc, sh = br.height / sc;
+  sx = Math.max(0, sx); sy = Math.max(0, sy); sw = Math.min(vw - sx, sw); sh = Math.min(vh - sy, sh);
+  if (sw < 20 || sh < 10) return null;
+  const k = Math.min(1, 900 / sw);
+  ocrCanvas.width = Math.round(sw * k); ocrCanvas.height = Math.round(sh * k);
+  ocrCtx.drawImage(video, sx, sy, sw, sh, 0, 0, ocrCanvas.width, ocrCanvas.height);
+  return ocrCtx.getImageData(0, 0, ocrCanvas.width, ocrCanvas.height);
+}
+function ocrStep() {
+  const img = grabBox(); if (!img) return;
+  DigitOCR.init();
+  const cands = DigitOCR.pick(DigitOCR.read(img).runs, opts.fmt.checked);
+  const top = cands[0] || null;
+  ocrWin.push(top); if (ocrWin.length > 6) ocrWin.shift();
+  stage.classList.toggle('hit', !!top);
+  if (!top) return;
+  const n = ocrWin.filter(c => c && c.text === top.text).length;
+  resultText.textContent = `読み取り中… ${top.text}` + (n < OCR_NEED ? `（${n}/${OCR_NEED}）` : '');
+  if (n >= OCR_NEED) { ocrWin = []; setOrder(top.text, '文字認識', top.glyphs); }
+}
+
 /* ============ 判定 ============ */
+const digitsOf = s => String(s || '').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '');
+let refVia = 'QR', lastKind = 'kata', lastOk = false;
+let orderRaw = null, orderVia = '', orderGlyphs = null;
+
+function firstState() { return mode === 'order' && !orderRaw ? 'NEED_O' : 'NEED_A'; }
+
 function handleScan(raw, gap) {
   if (!raw) return;
   const n = normalize(raw);
@@ -483,72 +599,164 @@ function handleScan(raw, gap) {
     if (gap < GAP_MS) return;               // 判定直後、同じQRを見続けている
     nextCycle();
   }
-  if (state === 'NEED_A') {
-    refRaw = raw; refNorm = n;
-    state = 'NEED_B';
-    soundTick(); vibrate(30);
-    paint();
-    return;
-  }
+  if (state === 'NEED_A') { setSpec(raw, 'QR'); return; }
   if (state === 'NEED_B') {
     // 同じ番号なら「一度QRを外して」から2回目とみなす（1枚を2度読み防止）
     if (n === refNorm && gap < GAP_MS) return;
-    const ok = (n === refNorm);
-    finish(raw, ok);
+    finish('kata', n === refNorm, raw, 'QR');
   }
 }
-function finish(rawB, ok) {
-  state = 'RESULT';
-  holdUntil = performance.now() + HOLD_MS;
-  valB.textContent = rawB; valB.classList.remove('empty');
+/* ① 受注書（文字認識 または 手入力） */
+function setOrder(raw, via, glyphs) {
+  // 文字認識の結果を手で直したときは、その字形を正しい数字として覚える
+  if (via === '手入力' && orderVia === '文字認識' && orderGlyphs) DigitOCR.learn(orderGlyphs, digitsOf(raw));
+  orderRaw = raw; orderVia = via; orderGlyphs = glyphs || null;
+  soundTick(); vibrate(30); flashColor('#4a8dff');
+  state = 'NEED_A'; refRaw = refNorm = null;
+  stage.classList.remove('hit');
+  holdUntil = performance.now() + 150;
+  paint();
+}
+/* 仕様書（QR または 手入力） */
+function setSpec(raw, via) {
+  refRaw = raw; refNorm = normalize(raw); refVia = via;
+  if (mode === 'order') {
+    const ok = digitsOf(raw) === digitsOf(orderRaw);
+    if (ok && orderVia === '文字認識' && orderGlyphs) { DigitOCR.learn(orderGlyphs, digitsOf(orderRaw)); orderGlyphs = null; }
+    finish('order', ok, orderRaw, orderVia);
+    return;
+  }
+  state = 'NEED_B';
+  soundTick(); vibrate(30);
+  paint();
+}
+function finish(kind, ok, rawB, via) {
+  state = 'RESULT'; lastKind = kind; lastOk = ok;
+  const step = (kind === 'order' && ok && opts.kata.checked);   // 続けて型紙を読む
+  holdUntil = performance.now() + (step ? 1100 : HOLD_MS);
+  if (kind === 'kata') { valB.textContent = rawB; valB.classList.remove('empty'); }
+  paint();
   resultMark.textContent = ok ? '○ 一致' : '✕ 不一致';
   resultMark.style.color = ok ? 'var(--ok)' : 'var(--ng)';
-  resultText.textContent = ok ? '仕様書と型紙は同じ番号です' : '番号が違います。確認してください';
+  resultText.textContent = kind === 'order'
+    ? (ok ? '受注書と仕様書は同じ番号です' + (step ? '　→ 次は型紙' : '') : '受注書と仕様書の番号が違います。確認してください')
+    : (ok ? '仕様書と型紙は同じ番号です' : '仕様書と型紙の番号が違います。確認してください');
+  $('result').classList.remove('ok', 'ng');
   $('result').classList.add(ok ? 'ok' : 'ng');
   flashColor(ok ? '#18b26a' : '#e0413f');
   if (ok) { soundOk(); vibrate(60); } else { soundNg(); vibrate([90,70,90,70,180]); }
 
-  hist.unshift({ t:Date.now(), a:refRaw, b:rawB, ok, w:who.value.trim(), d:devId });
+  const rec = { t:Date.now(), k:kind, a:refRaw, b:rawB, v:via, ok, w:who.value.trim(), d:devId };
+  rec.id = devId + '-' + rec.t.toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+  hist.unshift(rec);
+  enqueue(rec);
   if (hist.length > 500) hist.length = 500;
   try { localStorage.setItem('qrcheck.hist', JSON.stringify(hist)); } catch (e) {}
   renderHist();
 
-  setTimeout(() => { if (state === 'RESULT' && performance.now() >= holdUntil) nextCycle(); }, HOLD_MS + 30);
+  setTimeout(() => { if (state === 'RESULT' && performance.now() >= holdUntil) nextCycle(); },
+             holdUntil - performance.now() + 30);
 }
+function clearB() { valB.textContent = '未読取'; valB.classList.add('empty'); }
+function clearA() { refRaw = refNorm = null; valA.textContent = '未読取'; valA.classList.add('empty'); }
 function nextCycle() {
-  if (opts.lock.checked) {                  // 仕様書を固定して型紙を次々に照合
-    state = 'NEED_B';
-    valB.textContent = '未読取'; valB.classList.add('empty');
+  if (mode === 'order' && lastKind === 'order') {
+    if (lastOk && opts.kata.checked) { state = 'NEED_B'; clearB(); }
+    else { state = 'NEED_A'; clearA(); clearB(); }
+  } else if (opts.lock.checked) {             // 仕様書を固定して型紙を次々に照合
+    state = 'NEED_B'; clearB();
   } else {
-    state = 'NEED_A';
-    refRaw = refNorm = null;
-    valA.textContent = '未読取'; valA.classList.add('empty');
-    valB.textContent = '未読取'; valB.classList.add('empty');
+    state = 'NEED_A'; clearA(); clearB();
   }
   resultMark.textContent = ''; resultMark.style.color = '';
   $('result').classList.remove('ok','ng');
   paint();
 }
 function reset() {
-  state = running ? 'NEED_A' : 'IDLE';
-  refRaw = refNorm = null; holdUntil = 0;
-  valA.textContent = '未読取'; valA.classList.add('empty');
-  valB.textContent = '未読取'; valB.classList.add('empty');
+  orderRaw = null; orderVia = ''; orderGlyphs = null; ocrWin = [];
+  clearA(); clearB(); holdUntil = 0;
+  state = running ? firstState() : 'IDLE';
   resultMark.textContent = ''; resultMark.style.color = '';
   $('result').classList.remove('ok','ng');
   paint();
 }
 function paint() {
+  const om = mode === 'order';
+  document.body.classList.toggle('orderMode', om);
+  $('slotO').hidden = !om;
+  $('slotB').hidden = om && !opts.kata.checked;
+  $('lbA').textContent = (om ? '② ' : '① ') + '仕様書';
+  $('lbB').textContent = (om ? '③ ' : '② ') + '型紙';
+  if (orderRaw) { valO.textContent = orderRaw; valO.classList.remove('empty'); }
+  else { valO.textContent = '未読取'; valO.classList.add('empty'); }
   if (refRaw !== null) { valA.textContent = refRaw; valA.classList.remove('empty'); }
+  $('slotO').classList.toggle('wait', state === 'NEED_O');
   slotA.classList.toggle('wait', state === 'NEED_A');
   slotB.classList.toggle('wait', state === 'NEED_B');
   slotA.classList.toggle('locked', opts.lock.checked && refRaw !== null);
+  $('slotO').classList.toggle('locked', om && !!orderRaw);
+  stage.classList.toggle('ocr', state === 'NEED_O');
+  $('ocrTip').hidden = state !== 'NEED_O' || !running;
+  document.querySelectorAll('#modeTabs button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
   if (state !== 'RESULT') {
     resultText.textContent =
-      state === 'NEED_A' ? '① 仕様書のQRをかざしてください' :
-      state === 'NEED_B' ? '② 型紙のQRをかざしてください' : '待機中';
+      state === 'NEED_O' ? '① 受注書の仕様書番号を横長の枠に合わせてください' :
+      state === 'NEED_A' ? (om ? '② ' : '① ') + '仕様書のQRをかざしてください' :
+      state === 'NEED_B' ? (om ? '③ ' : '② ') + '型紙のQRをかざしてください' :
+      (om ? '「読み取り開始」→ 受注書 → 仕様書 → 型紙 の順に読みます' : '待機中');
   }
 }
+
+/* ============ モード切替 ============ */
+let mode = 'pair';
+try { if (localStorage.getItem('qrcheck.mode') === 'order') mode = 'order'; } catch (e) {}
+document.querySelectorAll('#modeTabs button').forEach(b => b.onclick = () => {
+  if (mode === b.dataset.m) return;
+  mode = b.dataset.m;
+  try { localStorage.setItem('qrcheck.mode', mode); } catch (e) {}
+  reset();
+});
+
+/* ============ 手入力（枠をタップ） ============ */
+let modalFor = null;
+function openInput(which) {
+  if (state === 'IDLE') state = firstState();
+  modalFor = which;
+  const title = { O:'受注書の仕様書番号', A:'仕様書の番号', B:'型紙の番号' }[which];
+  $('mTitle').textContent = title + 'を入力';
+  $('mInput').value = which === 'O' ? (orderRaw || '') : '';
+  $('mRescan').hidden = !(which === 'O' && orderRaw);
+  $('modal').hidden = false;
+  setTimeout(() => $('mInput').focus(), 50);
+}
+function closeInput() { $('modal').hidden = true; modalFor = null; paint(); }
+$('mCancel').onclick = closeInput;
+$('mRescan').onclick = () => {           // 受注書を読み直す
+  orderRaw = null; orderVia = ''; orderGlyphs = null; ocrWin = [];
+  clearA(); clearB(); state = firstState(); closeInput();
+};
+$('mForm').onsubmit = e => {
+  e.preventDefault();
+  const v = $('mInput').value.trim();
+  if (!digitsOf(v) && !normalize(v)) return;
+  const which = modalFor; $('modal').hidden = true; modalFor = null;
+  if (which === 'O') {
+    const changingAfterSpec = state !== 'NEED_O';
+    setOrder(v, '手入力');
+    if (changingAfterSpec) { clearA(); clearB(); }
+    paint();
+  } else if (which === 'A') {
+    if (state === 'RESULT') nextCycle();
+    if (state === 'NEED_O') { paint(); return; }
+    clearB(); setSpec(v, '手入力');
+  } else if (which === 'B') {
+    if (state !== 'NEED_B') { paint(); return; }
+    finish('kata', normalize(v) === refNorm, v, '手入力');
+  }
+};
+$('slotO').onclick = () => openInput('O');
+slotA.onclick = () => { if (state !== 'NEED_O') openInput('A'); };
+slotB.onclick = () => { if (state === 'NEED_B') openInput('B'); };
 
 /* ============ 履歴 ============ */
 function renderHist() {
@@ -559,27 +767,88 @@ function renderHist() {
   $('hist').innerHTML = hist.slice(0, 100).map(h => {
     const d = new Date(h.t);
     const tm = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-    const sub = h.ok ? '' : `<small>仕様書 ${escapeHtml(h.a)} ／ 型紙 ${escapeHtml(h.b)}</small>`;
+    const other = h.k === 'order' ? '受注書' : '型紙';
+    const sub = h.ok ? '' : `<small>仕様書 ${escapeHtml(h.a)} ／ ${other} ${escapeHtml(h.b)}</small>`;
     return `<div class="row">
       <div class="tag ${h.ok?'ok':'ng'}">${h.ok?'○':'✕'}</div>
-      <div class="val">${escapeHtml(h.ok ? h.a : '不一致')}${sub}</div>
-      <div class="tm">${tm}</div></div>`;
+      <div class="val"><span class="kind">${other}</span>${escapeHtml(h.ok ? h.a : '不一致')}${sub}</div>
+      <div class="tm">${tm}${h.id && pendingIds().has(h.id) ? '<small>未送信</small>' : ''}</div></div>`;
   }).join('') || '<div class="row" style="color:#5c657a">まだ判定はありません</div>';
 }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
+/* ============ スプレッドシートへの自動送信 ============
+   判定のたびに送信待ちに入れ、届いたことが確認できたものから消す。
+   圏外のときはスマホ内にためておき、つながったら自動で送る。 */
+const CFG = window.QRCHECK_CONFIG || {};
+const SHEET_URL = String(CFG.SHEET_URL || '').trim();
+let queue = [];
+try { queue = JSON.parse(localStorage.getItem('qrcheck.queue') || '[]'); } catch (e) {}
+let syncing = false, syncErr = '', lastOkAt = 0;
+const saveQueue = () => { try { localStorage.setItem('qrcheck.queue', JSON.stringify(queue)); } catch (e) {} };
+const pendingIds = () => new Set(queue.map(r => r.id));
+function enqueue(h) {
+  if (!SHEET_URL) return;
+  const d = new Date(h.t);
+  queue.push({ id:h.id, qr:h.a, date:ymd(d), time:hms(d), who:h.w || '', dev:h.d || devId,
+               result:h.ok ? 'OK' : 'NG', a:h.a, b:h.b, kind:kindName(h), via:h.v || 'QR' });
+  saveQueue(); renderSync();
+  setTimeout(syncNow, 300);
+}
+async function syncNow() {
+  if (!SHEET_URL || syncing || !queue.length) { renderSync(); return; }
+  syncing = true; renderSync();
+  try {
+    while (queue.length) {
+      const batch = queue.slice(0, 100);
+      const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 25000);
+      const res = await fetch(SHEET_URL, {
+        method:'POST', body:JSON.stringify({ key:CFG.SHEET_KEY || '', records:batch }),
+        headers:{ 'Content-Type':'text/plain;charset=utf-8' }, redirect:'follow', signal:ctl.signal,
+      });
+      clearTimeout(to);
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.error === 'bad key' ? '合言葉が違います' : (j.error || '送信エラー'));
+      const done = new Set(j.ids || []);
+      if (!done.size) throw new Error('送信エラー');
+      queue = queue.filter(r => !done.has(r.id));
+      saveQueue();
+    }
+    syncErr = ''; lastOkAt = Date.now();
+  } catch (e) {
+    syncErr = navigator.onLine === false ? '圏外' : (e && e.name === 'AbortError' ? '通信が遅い' : e instanceof TypeError ? '通信できません' : (e.message || '送信失敗'));
+  }
+  syncing = false;
+  renderSync(); renderHist();
+}
+function renderSync() {
+  const el = $('syncStat');
+  if (!SHEET_URL) { el.hidden = true; return; }
+  el.hidden = false;
+  el.className = queue.length ? (syncErr ? 'err' : 'wait') : '';
+  el.textContent = syncing ? '送信中…'
+    : queue.length ? `未送信 ${queue.length}件` + (syncErr ? `（${syncErr}）` : '')
+    : '☁ 送信済み';
+  el.title = 'タップすると今すぐ送信します';
+}
+$('syncStat').onclick = () => { syncErr = ''; syncNow(); };
+window.addEventListener('online', syncNow);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) syncNow(); });
+setInterval(() => { if (queue.length) syncNow(); }, 30000);
+
 /* CSV。複数端末のCSVは merge.html で1つにまとめられる（列はそのまま共通） */
 const p2 = n => String(n).padStart(2,'0');
+const kindName = h => h.k === 'order' ? '仕様書×受注書' : '仕様書×型紙';
 const ymd = d => d.getFullYear() + '/' + p2(d.getMonth()+1) + '/' + p2(d.getDate());
 const hms = d => p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds());
 $('btnCsv').onclick = () => {
   if (!hist.length) return;
   const q = v => '"' + String(v).replace(/"/g,'""') + '"';
-  const csv = '\ufeff' + ['QRコード番号,日付,時間,担当者,端末番号,判定,仕様書,型紙'].concat(
+  const csv = '\ufeff' + ['QRコード番号,日付,時間,担当者,端末番号,照合種別,判定,仕様書,照合相手の番号,読取方法'].concat(
     hist.slice().reverse().map(h => {
       const d = new Date(h.t);
-      return [h.a, ymd(d), hms(d), h.w||'', h.d||devId, h.ok?'OK':'NG', h.a, h.b].map(q).join(',');
+      return [h.a, ymd(d), hms(d), h.w||'', h.d||devId, kindName(h), h.ok?'OK':'NG', h.a, h.b, h.v||'QR'].map(q).join(',');
     })
   ).join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
@@ -626,7 +895,7 @@ if (!canVibrate) {                        // iPhone/iPadのブラウザにはバ
   $('labVib').classList.add('off');
   $('labVib').lastChild.textContent = ' バイブ（この端末では非対応）';
 }
-fitStage(); renderHist(); paint(); initDetector(); showAudioWarn();
+fitStage(); renderHist(); paint(); initDetector(); showAudioWarn(); renderSync(); syncNow();
 
 /* オフラインでも起動できるようにする（正規のHTTPSで配信されている場合のみ有効） */
 if ('serviceWorker' in navigator && window.isSecureContext) {

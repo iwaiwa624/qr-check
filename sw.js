@@ -5,7 +5,7 @@
  * アプリを更新したときは、下の VERSION の数字を1つ増やしてください。
  * 各端末は次回起動時に新しい版を取り込みます。
  */
-const VERSION = 'qrcheck-v2';
+const VERSION = 'qrcheck-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -17,6 +17,8 @@ const ASSETS = [
   './test-qr.html',
   './qrcode.min.js',
   './merge.html',
+  './config.js',
+  './ocr.js',
 ];
 
 self.addEventListener('install', e => {
@@ -38,6 +40,8 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  // 送信先（Googleなど）への通信はキャッシュしない
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(hit => {
       // キャッシュを即返しつつ、裏で新しい版を取り込む
